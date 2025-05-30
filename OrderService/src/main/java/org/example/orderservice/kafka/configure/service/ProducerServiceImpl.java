@@ -6,20 +6,25 @@ import org.example.core.OrderEvent;
 import org.example.orderservice.dto.OrderDto;
 import org.example.orderservice.kafka.configure.KafkaProducerConfigure;
 import org.example.orderservice.model.Order;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.SendResult;
 import org.springframework.stereotype.Service;
 
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
 @Service
 @RequiredArgsConstructor
 public class ProducerServiceImpl implements ProducerService {
     private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final Logger log = LoggerFactory.getLogger(ProducerServiceImpl.class);
 
     @Override
     public void send(String topicName, String id, OrderDto orderDto) throws ExecutionException, InterruptedException {
-        ProducerRecord<String, Object> send = new ProducerRecord<>(
+        CompletableFuture<SendResult<String, Object>> future = kafkaTemplate.send(
                 KafkaProducerConfigure.TOPIC_NAME, id,
                 new OrderEvent(
                         orderDto.getId(),
@@ -28,10 +33,13 @@ public class ProducerServiceImpl implements ProducerService {
                         orderDto.getQuantity(),
                         orderDto.getStatus(),
                         orderDto.getCreatedAt()
-                )
-        );
-        send.headers().add("messageId", UUID.randomUUID().toString().getBytes());
-
-        kafkaTemplate.send(send).get();
+                ))
+                .whenComplete((r, e) -> {
+                    if (e != null) {
+                        log.error("Error sending message", e);
+                    } else {
+                        log.info("Message sent successfully");
+                    }
+                });
     }
 }
